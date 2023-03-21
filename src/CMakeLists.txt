@@ -594,6 +594,11 @@ if(NOT WITH_SYSTEM_ROCKSDB)
   build_rocksdb()
 endif(NOT WITH_SYSTEM_ROCKSDB)
 
+if(NOT WITH_SYSTEM_WT)
+  include(BuildWiredTiger)
+  build_wiredtiger()
+endif(NOT WITH_SYSTEM_WT)
+
 if(WITH_MGR)
   add_subdirectory(mgr)
   add_subdirectory(exporter)

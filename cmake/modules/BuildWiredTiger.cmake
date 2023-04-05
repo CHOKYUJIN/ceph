@@ -56,7 +56,7 @@ function(build_wiredtiger)
 
   add_library(WiredTiger::WiredTiger STATIC IMPORTED)
   add_dependencies(WiredTiger::WiredTiger wiredtiger_ext)
-
+  set(wiredtiger_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/wiredtiger/include")
   set_target_properties(WiredTiger::WiredTiger PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${wiredtiger_INCLUDE_DIR}"
     INTERFACE_LINK_LIBRARIES "${wiredtiger_INTERFACE_LINK_LIBRARIES}"

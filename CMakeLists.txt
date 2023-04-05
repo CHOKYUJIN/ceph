@@ -596,6 +596,11 @@ if (WITH_SYSTEM_ROCKSDB)
   find_package(RocksDB 5.14 REQUIRED)
 endif()
 
+option(WITH_SYSTEM_WT "require and build with system wiredtiger" OFF)
+if (WITH_SYSTEM_WT)
+  find_package(WiredTiger 11.1.0 REQUIRED)
+endif()
+
 option(WITH_SEASTAR "Build seastar components")
 set(HAVE_SEASTAR ${WITH_SEASTAR})
 

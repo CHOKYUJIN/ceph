@@ -643,6 +643,11 @@ if(NOT WITH_SYSTEM_ROCKSDB)
   build_rocksdb()
 endif(NOT WITH_SYSTEM_ROCKSDB)
 
+if(NOT WITH_SYSTEM_WT)
+  include(BuildWiredTiger)
+  build_wiredtiger()
+endif(NOT WITH_SYSTEM_WT)
+
 include(TestBigEndian)
 test_big_endian(CEPH_BIG_ENDIAN)
 if(NOT CEPH_BIG_ENDIAN)

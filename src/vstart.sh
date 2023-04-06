@@ -663,6 +663,8 @@ EOF
         bluestore block db create = true
         bluestore block wal path = $CEPH_DEV_DIR/osd\$id/block.wal.file
         bluestore block wal size = 1048576000
+        bluestore bluefs = false
+        bluestore kvbackend = wiredtigerdb
         bluestore block wal create = true"
         fi
         if [ "$zoned_enabled" -eq 1 ]; then

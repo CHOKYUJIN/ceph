@@ -7,6 +7,7 @@
 #endif
 #include "MemDB.h"
 #include "RocksDBStore.h"
+#include "WiredTigerDB.h"
 
 using std::map;
 using std::string;
@@ -28,6 +29,9 @@ KeyValueDB *KeyValueDB::create(CephContext *cct, const string& type,
     cct->check_experimental_feature_enabled("memdb")) {
     return new MemDB(cct, dir, p);
   }
+  if(type == "wiredtigerdb") {
+    return new WiredTigerDB(cct, dir, options, p);
+  }
   return NULL;
 }
 
@@ -43,6 +47,9 @@ int KeyValueDB::test_init(const string& type, const string& dir)
   }
   if (type == "memdb") {
     return MemDB::_test_init(dir);
+  }
+  if (type == "wiredtigerdb") {
+    return WiredTigerDB::_test_init(dir);
   }
   return -EINVAL;
 }

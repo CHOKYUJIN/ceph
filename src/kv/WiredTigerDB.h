@@ -11,6 +11,7 @@
 #include <string>
 #include <memory>
 #include <errno.h>
+#include <chrono>
 #include "common/errno.h"
 #include "common/dout.h"
 #include "include/ceph_assert.h"
@@ -34,6 +35,7 @@ enum {
 
 #define KEY_DELIMETER '\57' // '/' in ascii
 #define TABLE_NAME "table:db"
+#define MAX_RETRY_MS_TIME 120000 // 2 minutes
 
 /**
  * Uses WiredTiger to implement the KeyValueDB interface

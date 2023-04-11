@@ -178,8 +178,6 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::set(
   const string &k,
   const bufferlist &to_set_bl)
 {
-
-
   string key = combine_strings(prefix, k);
   if (to_set_bl.is_contiguous() && to_set_bl.length() > 0) {
     dinfo << __func__ << ": contiguous" << dendl;
@@ -276,7 +274,6 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::rm_range_keys(const string &pref
     rmkey(prefix, it->key());
   }
 }
-
 void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix, const std::string &key,
 	                                                    const ceph::bufferlist  &value)
 {
@@ -289,48 +286,67 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
 
   int r = 0;
   string k = combine_strings(prefix, key);
-  WT_ITEM key_item;
-  key_item.data = k.data();
-  key_item.size = k.size();
-  trx_cursor->set_key(trx_cursor, &key_item);
+  std::chrono::milliseconds retry_expire(MAX_RETRY_MS_TIME);
+  auto end_time = std::chrono::system_clock::now() + retry_expire;
 
-  r = trx_cursor->search(trx_cursor);
-  if(r) {
-    dinfo << __func__ << ": merge_nonexistent" << dendl;
-    std::string new_value;
-    mop->merge_nonexistent(value.buffers().front().c_str(), value.length(), &new_value);
+  do {
+    WT_ITEM key_item;
+    key_item.data = k.data();
+    key_item.size = k.size();
+    trx_cursor->set_key(trx_cursor, &key_item);
 
-    WT_ITEM value_item;
-    value_item.data = new_value.data();
-    value_item.size = new_value.size();
-    trx_cursor->set_value(trx_cursor, &value_item);
+    r = trx_cursor->search(trx_cursor);
+    if(r == WT_NOTFOUND) {
+      dinfo << __func__ << ": merge_nonexistent" << dendl;
+      std::string new_value;
+      mop->merge_nonexistent(value.buffers().front().c_str(), value.length(), &new_value);
 
-    r = trx_cursor->insert(trx_cursor);
-    if(r) {
-      derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+      WT_ITEM value_item;
+      value_item.data = new_value.data();
+      value_item.size = new_value.size();
+      trx_cursor->set_value(trx_cursor, &value_item);
+
+      r = trx_cursor->insert(trx_cursor);
+      if(r) {
+        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+        trx_session->commit_transaction(trx_session, NULL);
+        trx_session->reset_snapshot(trx_session);
+        trx_session->begin_transaction(trx_session, "isolation=snapshot");
+        continue;
+      } else {
+        break;
+      }
+    } else if (!r) {
+      dinfo << __func__ << ": merge (existent)" << dendl;
+      WT_ITEM old_value_item;
+      r = trx_cursor->get_value(trx_cursor, &old_value_item);
+      if(r) {
+        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+        ceph_abort_msg("After search, Cannot get value from the cursor");
+      }
+
+      std::string new_value;
+      mop->merge((const char *)old_value_item.data, old_value_item.size, value.buffers().front().c_str(), value.length(), &new_value);
+      
+      WT_ITEM value_item;
+      value_item.data = new_value.data();
+      value_item.size = new_value.size();
+      trx_cursor->set_value(trx_cursor, &value_item);
+
+      r = trx_cursor->update(trx_cursor);
+      if(r) {
+        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+        trx_session->commit_transaction(trx_session, NULL);
+        trx_session->reset_snapshot(trx_session);
+        trx_session->begin_transaction(trx_session, "isolation=snapshot");
+        continue;
+      } else {
+        break;
+      }
+    } else {
+      ceph_abort("not implemented miscellaneaous merge error");
     }
-  } else { 
-    dinfo << __func__ << ": merge (existent)" << dendl;
-    WT_ITEM old_value_item;
-    r = trx_cursor->get_value(trx_cursor, &old_value_item);
-    if(r) {
-      derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
-      ceph_abort_msg("After search, Cannot get value from the cursor");
-    }
-
-    std::string new_value;
-    mop->merge((const char *)old_value_item.data, old_value_item.size, value.buffers().front().c_str(), value.length(), &new_value);
-    
-    WT_ITEM value_item;
-    value_item.data = new_value.data();
-    value_item.size = new_value.size();
-    trx_cursor->set_value(trx_cursor, &value_item);
-
-    r = trx_cursor->update(trx_cursor);
-    if(r) {
-      derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
-    }
-  }
+  } while(std::chrono::system_clock::now() < end_time);
 }
 
 int WiredTigerDB::submit_transaction(KeyValueDB::Transaction t) 

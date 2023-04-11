@@ -665,6 +665,7 @@ EOF
         bluestore block wal size = 1048576000
         bluestore bluefs = false
         bluestore kvbackend = wiredtigerdb
+        bluestore allocator = stupid 
         bluestore block wal create = true"
         fi
         if [ "$zoned_enabled" -eq 1 ]; then

@@ -289,6 +289,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
   std::chrono::milliseconds retry_expire(MAX_RETRY_MS_TIME);
   auto end_time = std::chrono::system_clock::now() + retry_expire;
 
+  bool is_retry = false;
   do {
     WT_ITEM key_item;
     key_item.data = k.data();
@@ -297,7 +298,6 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
 
     r = trx_cursor->search(trx_cursor);
     if(r == WT_NOTFOUND) {
-      dinfo << __func__ << ": merge_nonexistent" << dendl;
       std::string new_value;
       mop->merge_nonexistent(value.buffers().front().c_str(), value.length(), &new_value);
 
@@ -308,16 +308,23 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
 
       r = trx_cursor->insert(trx_cursor);
       if(r) {
-        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+        if(!is_retry) {
+          derr << __func__ << ": merge_nonexistent failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+          is_retry = true;
+        }
         trx_session->commit_transaction(trx_session, NULL);
         trx_session->reset_snapshot(trx_session);
         trx_session->begin_transaction(trx_session, "isolation=snapshot");
         continue;
       } else {
+        if(!is_retry) 
+          dinfo << __func__ << ": merge_nonexistent success" << " key: " << key << " key size: " << key.size() << dendl;
+        else 
+          dinfo << __func__ << ": merge_nonexistent (retry) success" << " key: " << key << " key size: " << key.size() << dendl;
+          
         break;
       }
     } else if (!r) {
-      dinfo << __func__ << ": merge (existent)" << dendl;
       WT_ITEM old_value_item;
       r = trx_cursor->get_value(trx_cursor, &old_value_item);
       if(r) {
@@ -335,12 +342,20 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
 
       r = trx_cursor->update(trx_cursor);
       if(r) {
-        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+        if(!is_retry) {
+          derr << __func__ << ": merge (existent) failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+          is_retry = true;
+        }
         trx_session->commit_transaction(trx_session, NULL);
         trx_session->reset_snapshot(trx_session);
         trx_session->begin_transaction(trx_session, "isolation=snapshot");
         continue;
       } else {
+        if(!is_retry) 
+          dinfo << __func__ << ": merge (existent) success" << " key: " << key << " key size: " << key.size() << dendl;
+        else 
+          dinfo << __func__ << ": merge (existent) (retry) success" << " key: " << key << " key size: " << key.size() << dendl;
+
         break;
       }
     } else {

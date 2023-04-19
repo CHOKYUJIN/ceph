@@ -54,6 +54,7 @@ function(build_wiredtiger)
     INSTALL_COMMAND ""
     LIST_SEPARATOR !)
 
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/wiredtiger/include")
   add_library(WiredTiger::WiredTiger STATIC IMPORTED)
   add_dependencies(WiredTiger::WiredTiger wiredtiger_ext)
   set(wiredtiger_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/wiredtiger/include")

@@ -17,7 +17,7 @@
 // like a full memory barrier stalling execution till CPU's store and
 // load buffers are drained.
 
-#if defined(WITH_SEASTAR) && !defined(WITH_BLUESTORE)
+#if defined(WITH_SEASTAR) && !defined(WITH_BLUESTORE) && !defined(WITH_TIGERSTORE)
 
 #include <type_traits>
 

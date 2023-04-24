@@ -31,6 +31,10 @@
 #include "os/bluestore/BlueStore.h"
 #include "os/bluestore/BlueFS.h"
 #endif
+#if defined(WITH_TIGERSTORE)
+#include "os/tigerstore/BlueStore.h"
+#include "os/tigerstore/BlueFS.h"
+#endif
 #include "include/Context.h"
 #include "common/ceph_argparse.h"
 #include "common/admin_socket.h"

@@ -204,7 +204,7 @@ if(WITH_ZFS)
   set(HAVE_LIBZFS ${ZFS_FOUND})
 endif()
 
-option(WITH_BLUESTORE "Bluestore OSD backend" ON)
+option(WITH_BLUESTORE "Bluestore OSD backend" OFF)
 if(WITH_BLUESTORE)
   if(LINUX)
     find_package(aio)
@@ -280,6 +280,26 @@ if(WITH_BLUESTORE)
 endif()
 
 option(WITH_BLUEFS "libbluefs library" OFF)
+
+# Tigerstore cmake options
+option(WITH_TIGERSTORE "Tigerstore OSD backend" ON)
+if(WITH_TIGERSTORE)
+  if(LINUX)
+    find_package(aio)
+    set(HAVE_LIBAIO ${AIO_FOUND})
+  elseif(FREEBSD)
+    # POSIX AIO is integrated into FreeBSD kernel, and exposed by libc.
+    set(HAVE_POSIXAIO ON)
+  endif()
+endif()
+
+if(WITH_TIGERSTORE)
+  if(NOT AIO_FOUND AND NOT HAVE_POSIXAIO AND NOT WITH_SPDK AND NOT WITH_BLUESTORE_PMEM)
+    message(SEND_ERROR "WITH_TIGERSTORE is ON, "
+      "but none of the tigerstore backends is enabled. "
+      "Please install libaio")
+  endif()
+endif()
 
 option(WITH_QATZIP "Enable QATZIP" OFF)
 if(WITH_QATZIP)

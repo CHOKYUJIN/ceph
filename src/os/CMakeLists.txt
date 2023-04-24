@@ -37,6 +37,24 @@ if(WITH_BLUESTORE)
   )
 endif(WITH_BLUESTORE)
 
+if(WITH_TIGERSTORE)
+  list(APPEND libos_srcs
+    tigerstore/Allocator.cc
+    tigerstore/BitmapFreelistManager.cc
+    tigerstore/BlueFS.cc
+    tigerstore/bluefs_types.cc
+    tigerstore/BlueRocksEnv.cc
+    tigerstore/BlueStore.cc
+    tigerstore/bluestore_types.cc
+    tigerstore/fastbmap_allocator_impl.cc
+    tigerstore/FreelistManager.cc
+    tigerstore/StupidAllocator.cc
+    tigerstore/BitmapAllocator.cc
+    tigerstore/AvlAllocator.cc
+    tigerstore/HybridAllocator.cc
+  )
+endif(WITH_TIGERSTORE)
+
 if(WITH_ZBD)
   list(APPEND libos_srcs
     bluestore/zoned_types.cc

@@ -12,12 +12,32 @@
 #ifdef WITH_BLUESTORE
 #include "os/bluestore/BlueStore.h"
 #endif
+#ifdef WITH_TIGERSTORE
+#include "os/tigerstore/BlueStore.h"
+#endif
 
 class KeyValueDB;
 
 class StoreTool
 {
 #ifdef WITH_BLUESTORE
+  struct Deleter {
+    BlueStore *bluestore;
+    Deleter()
+      : bluestore(nullptr) {}
+    Deleter(BlueStore *store)
+      : bluestore(store) {}
+    void operator()(KeyValueDB *db) {
+      if (bluestore) {
+	bluestore->umount();
+	delete bluestore;
+      } else {
+	delete db;
+      }
+    }
+  };
+  std::unique_ptr<KeyValueDB, Deleter> db;
+#elif defined(WITH_TIGERSTORE)
   struct Deleter {
     BlueStore *bluestore;
     Deleter()

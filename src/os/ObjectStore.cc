@@ -27,6 +27,9 @@
 #ifndef WITH_SEASTAR
 #include "kstore/KStore.h"
 #endif
+#if defined(WITH_TIGERSTORE)
+#include "tigerstore/BlueStore.h"
+#endif
 
 using std::string;
 
@@ -70,6 +73,11 @@ ObjectStore *ObjectStore::create(CephContext *cct,
     return new KStore(cct, data);
   }
 #endif
+#if defined(WITH_TIGERSTORE)
+  if(type == "bluestore") {
+    return new BlueStore(cct, data);
+  }
+#endif
   return NULL;
 }
 
@@ -101,6 +109,16 @@ int ObjectStore::probe_block_device_fsid(
   }
 #endif
 
+#if defined(WITH_TIGERSTORE)
+  // first try tigerstore -- it has a crc on its header and will fail
+  // reliably.
+  r = BlueStore::get_block_device_fsid(cct, path, fsid);
+  if (r == 0) {
+    lgeneric_dout(cct, 0) << __func__ << " " << path << " is tigerstore, "
+			  << *fsid << dendl;
+    return r;
+  }
+#endif
   return -EINVAL;
 }
 

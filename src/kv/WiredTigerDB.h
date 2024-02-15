@@ -53,8 +53,8 @@ class WiredTigerDB : public KeyValueDB {
   WT_CONNECTION *conn;
 
   // For get()
-  WT_SESSION *session;
-  WT_CURSOR *cursor;
+  WT_SESSION *first_session;
+
 
   WiredTigerDB(CephContext *c, const std::string &path, std::map<std::string,std::string> opt, void *p) :
     cct(c),
@@ -63,8 +63,7 @@ class WiredTigerDB : public KeyValueDB {
     kv_options(opt),
     priv(p),
     conn(nullptr),
-    session(nullptr),
-    cursor(nullptr)
+    first_session(nullptr)
   {}
 
   ~WiredTigerDB() override;
@@ -160,7 +159,7 @@ class WiredTigerDB : public KeyValueDB {
   public:
     explicit WiredTigerDBWholeSpaceIteratorImpl(const WiredTigerDB* db, const KeyValueDB::IteratorOpts opts) : db(const_cast<WiredTigerDB*>(db)) {
       WT_CURSOR *temp_cursor;
-      int r = db->session->open_cursor(db->session, TABLE_NAME, NULL, NULL, &temp_cursor);
+      int r = db->first_session->open_cursor(db->first_session, TABLE_NAME, NULL, NULL, &temp_cursor);
       if (r != 0) {
         ceph_abort();
       }

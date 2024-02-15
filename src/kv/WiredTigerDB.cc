@@ -102,12 +102,12 @@ int WiredTigerDB::do_open(ostream &out,
   int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on),statistics=(all)", &conn);
   if(r) {
     derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    ceph_abort_msg("DB Open failed");
   }
 
   // Open a session handle for the database.
-  conn->open_session(conn, NULL, NULL, &session);
-  session->create(session, TABLE_NAME, "key_format=u,value_format=u");
-  session->open_cursor(session, TABLE_NAME, NULL, NULL, &cursor);
+  conn->open_session(conn, NULL, NULL, &first_session);
+  first_session->create(first_session, TABLE_NAME, "key_format=u,value_format=u");
 
   // Build Perf Counter
   PerfCountersBuilder plb(g_ceph_context, "wiredtiger", l_wiredtiger_first, l_wiredtiger_last);
@@ -130,20 +130,23 @@ void WiredTigerDB::close()
     logger = nullptr;
   }
 
-  cursor->close(cursor);
-  session->close(session, NULL);
+  first_session->close(first_session, NULL);
   conn->close(conn, NULL);
 }
 
 int WiredTigerDB::repair(std::ostream &out)
 {
   // should close and re-open the database.
-  cursor->close(cursor);
-  session->close(session, NULL);
+  first_session->close(first_session, NULL);
   conn->close(conn, NULL);
 
-  conn->open_session(conn, NULL, NULL, &session);
-  session->create(session, TABLE_NAME, "key_format=u,value_format=u");
+  int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on),statistics=(all)", &conn);
+  if(r) {
+    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    ceph_abort_msg("Repair failed");
+  }
+  conn->open_session(conn, NULL, NULL, &first_session);
+
   return 0;
 }
 
@@ -388,7 +391,12 @@ int WiredTigerDB::get(
 {
   dinfo << __func__ << " (multiple keys): prefix: " << prefix << dendl;
   utime_t start = ceph_clock_now();
-  
+  WT_SESSION *session;
+  WT_CURSOR *cursor;
+
+  conn->open_session(conn, NULL, NULL, &session);
+  session->open_cursor(session, TABLE_NAME, NULL, NULL, &cursor);
+
   for (auto &key : keys) {
     dinfo << __func__ << ": key: " << key << dendl;
 
@@ -401,13 +409,17 @@ int WiredTigerDB::get(
     int r = cursor->search(cursor);
     if(r) {
       derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
-      return r;
+      cursor->close(cursor);
+      session->close(session, NULL);
+      return -ENOENT;
     }
 
     WT_ITEM value_item;
     r = cursor->get_value(cursor, &value_item);
     if(r) {
       derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+      cursor->close(cursor);
+      session->close(session, NULL);
       return -ENOENT;
     }
   
@@ -418,6 +430,9 @@ int WiredTigerDB::get(
   utime_t lat = ceph_clock_now() - start;
   logger->inc(l_wiredtiger_gets);
   logger->tinc(l_wiredtiger_get_latency, lat);
+
+  cursor->close(cursor);
+  session->close(session, NULL);
 
   return 0;
 }
@@ -433,21 +448,31 @@ int WiredTigerDB::get(
 
   int r = 0;
   string k = combine_strings(prefix, key);
+  WT_SESSION *session;
+  WT_CURSOR *cursor;
   WT_ITEM key_item;
+
+  conn->open_session(conn, NULL, NULL, &session);
+  session->open_cursor(session, TABLE_NAME, NULL, NULL, &cursor);
+
   key_item.data = k.data();
   key_item.size = k.size();
   cursor->set_key(cursor, &key_item);
 
   r = cursor->search(cursor);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    derr << __func__ << ": search() failed, " << wiredtiger_strerror(r) << dendl;
+    cursor->close(cursor);
+    session->close(session, NULL);
     return -ENOENT;
   }
 
   WT_ITEM value_item;
   r = cursor->get_value(cursor, &value_item);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    derr << __func__ << ": get_value() failed, " << wiredtiger_strerror(r) << dendl;
+    cursor->close(cursor);
+    session->close(session, NULL);
     return -ENOENT;
   }
 
@@ -458,7 +483,10 @@ int WiredTigerDB::get(
   logger->inc(l_wiredtiger_gets);
   logger->tinc(l_wiredtiger_get_latency, lat);
   
-  return r;
+  cursor->close(cursor);
+  session->close(session, NULL);
+
+  return 0;
 }
 
 int WiredTigerDB::get(
@@ -788,7 +816,7 @@ int WiredTigerDB::split_key(std::string &in, std::string *prefix, std::string *k
 void WiredTigerDB::dump_db() {
   WT_CURSOR *cursor;
 
-  int r = session->open_cursor(session, TABLE_NAME, NULL, NULL, &cursor);
+  int r = first_session->open_cursor(first_session, TABLE_NAME, NULL, NULL, &cursor);
   if (r != 0) {
     ceph_abort();
   }

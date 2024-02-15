@@ -672,6 +672,7 @@ if(WITH_JAEGER)
 endif()
 add_executable(ceph-osd ${ceph_osd_srcs})
 add_dependencies(ceph-osd erasure_code_plugins)
+target_compile_options(ceph-osd PUBLIC -g -pg)
 target_link_libraries(ceph-osd osd os global-static common
   ${BLKID_LIBRARIES})
 if(WITH_FUSE)

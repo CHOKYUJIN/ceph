@@ -155,16 +155,11 @@ class WiredTigerDB : public KeyValueDB {
 
   class WiredTigerDBWholeSpaceIteratorImpl : public KeyValueDB::WholeSpaceIteratorImpl {
     WiredTigerDB *db;
-    WT_CURSOR *cursor;
+
+    WT_SESSION *iter_session;
+    WT_CURSOR *iter_cursor;
   public:
-    explicit WiredTigerDBWholeSpaceIteratorImpl(const WiredTigerDB* db, const KeyValueDB::IteratorOpts opts) : db(const_cast<WiredTigerDB*>(db)) {
-      WT_CURSOR *temp_cursor;
-      int r = db->first_session->open_cursor(db->first_session, TABLE_NAME, NULL, NULL, &temp_cursor);
-      if (r != 0) {
-        ceph_abort();
-      }
-      this->cursor = temp_cursor;
-    }
+    explicit WiredTigerDBWholeSpaceIteratorImpl(const WiredTigerDB* db, const KeyValueDB::IteratorOpts opts);
     ~WiredTigerDBWholeSpaceIteratorImpl() override;
 
     int seek_to_first() override;

@@ -25,8 +25,8 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "wiredtiger: "
 #define dtrace dout(30)
-#define dwarn dout(0)
-#define dinfo dout(0)
+#define dwarn dout(10)
+#define dinfo dout(10)
 
 namespace fs = std::filesystem;
 
@@ -101,7 +101,7 @@ int WiredTigerDB::do_open(ostream &out,
 
   int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on),statistics=(all)", &conn);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("DB Open failed");
   }
 
@@ -145,7 +145,7 @@ int WiredTigerDB::repair(std::ostream &out)
 
   int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on),statistics=(all)", &conn);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("Repair failed");
   }
   conn->open_session(conn, NULL, NULL, &first_session);
@@ -160,13 +160,13 @@ WiredTigerDB::WiredTigerDBTransactionImpl::WiredTigerDBTransactionImpl(WiredTige
 
   int r = trx_session->open_cursor(trx_session, TABLE_NAME, NULL, NULL, &trx_cursor);
   if(r) {
-    derr << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("Transaction Initialization failed");
   }
 
   r = trx_session->begin_transaction(trx_session, "isolation=snapshot");
   if(r) {
-    derr << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("Transaction Initialization failed");
   }
 }
@@ -208,7 +208,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::set(
 
     int r = trx_cursor->insert(trx_cursor);
     if(r) {
-      derr << __func__ << ": failed (contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": failed (contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
       /* TODO: if r == WT_ROLLBACK, rollback_transaction and begin_transaction and retry???????????? */
       if ((trx_session->rollback_transaction(trx_session, NULL)) != 0) 
         ceph_abort_msg("set: WT_ROLLBACK rollback_transaction failed");
@@ -234,7 +234,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::set(
 
     int r = trx_cursor->insert(trx_cursor);
     if(r) {
-      derr << __func__ << ": failed (non-contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": failed (non-contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
       /* TODO: if r == WT_ROLLBACK, rollback_transaction and begin_transaction and retry????????? */
       if ((trx_session->rollback_transaction(trx_session, NULL)) != 0) 
         ceph_abort_msg("set: WT_ROLLBACK rollback_transaction failed");
@@ -265,7 +265,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::rmkey(const string &prefix,
 
   int r = trx_cursor->remove(trx_cursor);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
   }
 }
 
@@ -329,7 +329,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
       r = trx_cursor->insert(trx_cursor);
       if(r) {
         if(!is_retry) {
-          derr << __func__ << ": merge_nonexistent failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+          dtrace << __func__ << ": merge_nonexistent failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
           is_retry = true;
         }
         trx_session->commit_transaction(trx_session, NULL);
@@ -348,7 +348,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
       WT_ITEM old_value_item;
       r = trx_cursor->get_value(trx_cursor, &old_value_item);
       if(r) {
-        derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+        dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
         ceph_abort_msg("After search, Cannot get value from the cursor");
       }
 
@@ -363,7 +363,7 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::merge(const std::string &prefix,
       r = trx_cursor->update(trx_cursor);
       if(r) {
         if(!is_retry) {
-          derr << __func__ << ": merge (existent) failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
+          dtrace << __func__ << ": merge (existent) failed, " << wiredtiger_strerror(r) << " retry..." << dendl;
           is_retry = true;
         }
         trx_session->commit_transaction(trx_session, NULL);
@@ -394,7 +394,7 @@ int WiredTigerDB::submit_transaction(KeyValueDB::Transaction t)
   logger->inc(l_wiredtiger_txns);
   logger->tinc(l_wiredtiger_submit_latency, lat);
   if(r) {
-    derr << __func__ << ": Transaction submission failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": Transaction submission failed, " << wiredtiger_strerror(r) << dendl;
     // (bluestore_debug_omit_kv_commit = false) would assert this error return
     return r;
   }  
@@ -426,7 +426,7 @@ int WiredTigerDB::get(
     
     int r = cursor->search(cursor);
     if(r) {
-      derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
       cursor->close(cursor);
       session->close(session, NULL);
       return -ENOENT;
@@ -435,7 +435,7 @@ int WiredTigerDB::get(
     WT_ITEM value_item;
     r = cursor->get_value(cursor, &value_item);
     if(r) {
-      derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
       cursor->close(cursor);
       session->close(session, NULL);
       return -ENOENT;
@@ -479,7 +479,7 @@ int WiredTigerDB::get(
 
   r = cursor->search(cursor);
   if(r) {
-    derr << __func__ << ": search() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": search() failed, " << wiredtiger_strerror(r) << dendl;
     cursor->close(cursor);
     session->close(session, NULL);
     return -ENOENT;
@@ -488,7 +488,7 @@ int WiredTigerDB::get(
   WT_ITEM value_item;
   r = cursor->get_value(cursor, &value_item);
   if(r) {
-    derr << __func__ << ": get_value() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": get_value() failed, " << wiredtiger_strerror(r) << dendl;
     cursor->close(cursor);
     session->close(session, NULL);
     return -ENOENT;
@@ -523,7 +523,7 @@ WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::WiredTigerDBWholeSpaceIterator
 
   int r = iter_session->open_cursor(iter_session, TABLE_NAME, NULL, NULL, &iter_cursor);
   if(r) {
-    derr << __func__ << ": Iterator Initialization failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": Iterator Initialization failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("Iterator Initialization failed");
   }
 
@@ -531,7 +531,7 @@ WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::WiredTigerDBWholeSpaceIterator
   WT_CURSOR *temp_cursor;
   int r = db->first_session->open_cursor(db->first_session, TABLE_NAME, NULL, NULL, &temp_cursor);
   if (r != 0) {
-    derr << __func__ << ": open_cursor failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": open_cursor failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("open_cursor failed");
   }
   this->cursor = temp_cursor;
@@ -550,11 +550,11 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::seek_to_first()
   dinfo << __func__ << dendl;
   int r = iter_cursor->reset(iter_cursor);
   if(r) {
-    derr << __func__ << ": reset() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": reset() failed, " << wiredtiger_strerror(r) << dendl;
   }
   r = iter_cursor->next(iter_cursor);
   if(r) {
-    derr << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
   }
 
   return r;
@@ -574,7 +574,7 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::seek_to_first(const string
  
   int r = iter_cursor->search_near(iter_cursor, &exact);
   if(r) {
-    derr << __func__ << ": searching by prefix failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": searching by prefix failed, " << wiredtiger_strerror(r) << dendl;
   }
   // TODO: exact >= 0
   return r;
@@ -586,11 +586,11 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::seek_to_last()
 
   int r = iter_cursor->reset(iter_cursor);
   if(r) {
-    derr << __func__ << ": reset() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": reset() failed, " << wiredtiger_strerror(r) << dendl;
   }
   r = iter_cursor->prev(iter_cursor);
   if(r) {
-    derr << __func__ << ": prev() failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": prev() failed, " << wiredtiger_strerror(r) << dendl;
   }
 
   return r;
@@ -610,7 +610,7 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::seek_to_last(const string 
 
   int r = iter_cursor->search_near(iter_cursor, &exact);
   if(r) {
-    derr << __func__ << ": searching by prefix failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": searching by prefix failed, " << wiredtiger_strerror(r) << dendl;
     r = seek_to_last();
   }
   // TODO: exact <= 0
@@ -632,14 +632,14 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::upper_bound(const string &
   int exact;
   int r = iter_cursor->search_near(iter_cursor, &exact);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     return -1;
   }
 
   if (exact <= 0) {
     r = next();
     if(r) {
-      derr << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
       return -1;
     }
   } 
@@ -662,14 +662,14 @@ int WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::lower_bound(const string &
   int exact;
   int r = iter_cursor->search_near(iter_cursor, &exact);
   if(r) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     return -1;
   }
 
   if (exact < 0) {
     r = next();
     if(r) {
-      derr << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
+      dtrace << __func__ << ": next() failed, " << wiredtiger_strerror(r) << dendl;
       return -1;
     }
   }
@@ -686,7 +686,7 @@ bool WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::valid()
   if (r == WT_NOTFOUND) {
     return false;
   } else if (r != 0) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     return false;
   }
 
@@ -720,7 +720,7 @@ string WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::key()
   std::string out_key;
   int r = split_key(in_key, 0, &out_key);
   if (r < 0) {
-    derr << __func__ << ": split_key failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": split_key failed, " << wiredtiger_strerror(r) << dendl;
     return "";
   }
 
@@ -764,7 +764,7 @@ bufferlist WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::value()
   WT_ITEM value_item;
   int r = iter_cursor->get_value(iter_cursor, &value_item);
   if (r != 0) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     return bufferlist();
   }
 
@@ -779,7 +779,7 @@ bufferptr WiredTigerDB::WiredTigerDBWholeSpaceIteratorImpl::value_as_ptr()
   WT_ITEM value_item;
   int r = iter_cursor->get_value(iter_cursor, &value_item);
   if (r != 0) {
-    derr << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
+    dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     return bufferptr();
   }
 

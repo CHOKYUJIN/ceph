@@ -34,7 +34,7 @@ enum {
 };
 
 #define KEY_DELIMETER '\57' // '/' in ascii
-#define TABLE_NAME "table:db"
+#define TABLE_NAME "blue:db"
 #define MAX_RETRY_MS_TIME 120000 // 2 minutes
 
 /**
@@ -112,6 +112,10 @@ class WiredTigerDB : public KeyValueDB {
       const char *k,
       size_t keylen,
       const ceph::bufferlist &bl) override;
+    void set_with_vid(
+      const std::string &k,
+      const std::string &vid,
+      const ceph::bufferlist &bl);
     void rmkey(
       const std::string &prefix,
       const std::string &k) override;
@@ -201,6 +205,7 @@ class WiredTigerDB : public KeyValueDB {
   }
 
   static int split_key(std::string &in, std::string *prefix, std::string *key);
+  static void split_key_with_vid(const std::string &combined_key, std::string &key_out, std::string &vid_out);
 
   uint64_t get_estimated_size(std::map<std::string,uint64_t> &extra) override {
       return -EOPNOTSUPP;

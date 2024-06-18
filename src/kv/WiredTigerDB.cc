@@ -25,8 +25,9 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "wiredtiger: "
 #define dtrace dout(30)
-#define dwarn dout(10)
+#define dwarn dout(20)
 #define dinfo dout(10)
+#define ddebug dout(10)
 
 namespace fs = std::filesystem;
 
@@ -99,7 +100,7 @@ int WiredTigerDB::do_open(ostream &out,
   // Open a connection to the database, creating it if necessary.
   dinfo << __func__ << " is trying to open " << path.c_str() << dendl;
 
-  int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on),statistics=(all)", &conn);
+  int r = wiredtiger_open(path.c_str(), NULL, "create,cache_size=5GB,log=(enabled,recover=on)", &conn);
   if(r) {
     dtrace << __func__ << ": failed, " << wiredtiger_strerror(r) << dendl;
     ceph_abort_msg("DB Open failed");
@@ -160,14 +161,14 @@ WiredTigerDB::WiredTigerDBTransactionImpl::WiredTigerDBTransactionImpl(WiredTige
 
   int r = trx_session->open_cursor(trx_session, TABLE_NAME, NULL, NULL, &trx_cursor);
   if(r) {
-    dtrace << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
-    ceph_abort_msg("Transaction Initialization failed");
+    dtrace << __func__ << ": Transaction Initialization: open_cursor failed, " << wiredtiger_strerror(r) << dendl;
+    ceph_abort_msg("Transaction Initialization: open_cursor failed");
   }
 
   r = trx_session->begin_transaction(trx_session, "isolation=snapshot");
   if(r) {
-    dtrace << __func__ << ": Transaction Initialization failed, " << wiredtiger_strerror(r) << dendl;
-    ceph_abort_msg("Transaction Initialization failed");
+    dtrace << __func__ << ": Transaction Initialization: begin_transaction failed, " << wiredtiger_strerror(r) << dendl;
+    ceph_abort_msg("Transaction Initialization: begin_transaction failed");
   }
 }
 
@@ -184,17 +185,26 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::set(
   const string &k,
   const bufferlist &to_set_bl)
 {
-  string key = combine_strings(prefix, k);
+  string key, vid;
+  string c_key = combine_strings(prefix, k);
   std::chrono::milliseconds retry_expire(MAX_RETRY_MS_TIME);
   auto end_time = std::chrono::system_clock::now() + retry_expire;
 
   // TODO: Retry loop
+  split_key_with_vid(c_key, key, vid);
+  if(vid.length() != 0) {
+    set_with_vid(key, vid, to_set_bl);
+    return;
+  }
+
   if (to_set_bl.is_contiguous() && to_set_bl.length() > 0) {
     dinfo << __func__ << ": contiguous" << dendl;
 
     dinfo << __func__ << ": prefix: " << prefix \
           << " key: " << k << " key size: " << k.size() \
           << " value : " << to_set_bl.buffers().front().c_str() << " value size: " << to_set_bl.length() << dendl;
+
+    ddebug << __func__ << ": key: " << key << " key size: " << key.size() << dendl;
 
     WT_ITEM key_item;
     key_item.data = key.data();
@@ -250,6 +260,75 @@ void WiredTigerDB::WiredTigerDBTransactionImpl::set(
   const bufferlist &to_set_bl)
 {
   return set(prefix, string(k, keylen), to_set_bl);
+}
+
+void WiredTigerDB::WiredTigerDBTransactionImpl::set_with_vid(
+  const std::string &key, 
+  const std::string &vid,
+  const ceph::bufferlist &to_set_bl) 
+{
+  // TODO: Retry loop
+  if (to_set_bl.is_contiguous() && to_set_bl.length() > 0) {
+    dinfo << __func__ << ": contiguous" << dendl;
+
+    dinfo << __func__ << " key: " << key << " key size: " << key.size() \
+          << " value : " << to_set_bl.buffers().front().c_str() << " value size: " << to_set_bl.length() << dendl;
+
+    ddebug << __func__ << ": key: " << key << " key size: " << key.size() << " vid: " << vid << dendl;
+
+    WT_ITEM key_item;
+    key_item.data = key.data();
+    key_item.size = key.size();
+    key_item.vid = vid.data();
+    key_item.vid_size = vid.size();
+    trx_cursor->set_key_with_vid(trx_cursor, &key_item);
+
+    WT_ITEM value_item;
+    value_item.data = to_set_bl.buffers().front().c_str();
+    value_item.size = to_set_bl.length();
+    value_item.vid = vid.data();
+    value_item.vid_size = vid.size();
+    trx_cursor->set_value_with_vid(trx_cursor, &value_item);
+
+    int r = trx_cursor->insert(trx_cursor);
+    if(r) {
+      dtrace << __func__ << ": failed (contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
+      /* TODO: if r == WT_ROLLBACK, rollback_transaction and begin_transaction and retry???????????? */
+      if ((trx_session->rollback_transaction(trx_session, NULL)) != 0) 
+        ceph_abort_msg("set: WT_ROLLBACK rollback_transaction failed");
+      if ((trx_session->begin_transaction(trx_session, NULL)) != 0) 
+        ceph_abort_msg("set: WT_ROLLBACK begin_transaction failed");
+    }
+  } else {
+    dinfo << __func__ << ": non-contiguous" << dendl;
+
+    ddebug << __func__ << ": key: " << key << " key size: " << key.size() << " vid: " << vid << dendl;
+
+    bufferlist copied_bl = to_set_bl;
+    WT_ITEM key_item;
+    key_item.data = key.data();
+    key_item.size = key.size();
+    key_item.vid = vid.data();
+    key_item.vid_size = vid.size();
+    trx_cursor->set_key_with_vid(trx_cursor, &key_item);
+
+    WT_ITEM value_item;
+    value_item.data = copied_bl.buffers().front().c_str();
+    value_item.size = copied_bl.length();
+    value_item.vid = vid.data();
+    value_item.vid_size = vid.size();
+    trx_cursor->set_value_with_vid(trx_cursor, &value_item);
+
+    int r = trx_cursor->insert(trx_cursor);
+    if(r) {
+      dtrace << __func__ << ": failed (non-contiguous bufferlist), " << wiredtiger_strerror(r) << dendl;
+      /* TODO: if r == WT_ROLLBACK, rollback_transaction and begin_transaction and retry????????? */
+      if ((trx_session->rollback_transaction(trx_session, NULL)) != 0) 
+        ceph_abort_msg("set: WT_ROLLBACK rollback_transaction failed");
+      if ((trx_session->begin_transaction(trx_session, NULL)) != 0) 
+        ceph_abort_msg("set: WT_ROLLBACK begin_transaction failed");
+    }
+  }
 }
 
 void WiredTigerDB::WiredTigerDBTransactionImpl::rmkey(const string &prefix,
@@ -862,6 +941,28 @@ int WiredTigerDB::split_key(std::string &in, std::string *prefix, std::string *k
     dinfo << __func__ << ": out_key: " << *key  << " size: " << key->size() << dendl;
   }
   return 0;
+}
+
+void WiredTigerDB::split_key_with_vid(const std::string &combined_key, std::string &key_out, std::string &vid_out) {
+  string ver_delim("\0v", 2);
+  string instance_delim("\0i", 2);
+
+  size_t ver_pos = combined_key.find(ver_delim);
+  size_t instance_pos = combined_key.find(instance_delim);
+
+  if (ver_pos == string::npos || instance_pos == string::npos) {
+    key_out = combined_key;
+    vid_out = "";
+    return;
+  }
+
+  // key_out = combined_key.substr(0, ver_pos) + combined_key.substr(instance_pos);
+  // vid_out = combined_key.substr(ver_pos + 2, instance_pos - ver_pos - 2);
+
+  key_out = combined_key.substr(0, ver_pos);
+  vid_out = combined_key.substr(ver_pos);
+
+  return;
 }
 
 void WiredTigerDB::dump_db() {

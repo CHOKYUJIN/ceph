@@ -542,6 +542,7 @@ do_rgw_conf() {
 [client.rgw.${current_port}]
         rgw frontends = $rgw_frontend port=${current_port}
         admin socket = ${CEPH_OUT_DIR}/radosgw.${current_port}.asok
+        debug rgw = 0
 EOF
         current_port=$((current_port + 1))
 done
@@ -663,8 +664,8 @@ EOF
         bluestore block db create = true
         bluestore block wal path = $CEPH_DEV_DIR/osd\$id/block.wal.file
         bluestore block wal size = 1048576000
-        bluestore bluefs = false
-        bluestore kvbackend = wiredtiger
+        bluestore bluefs = false 
+        bluestore kvbackend = wiredtiger 
         bluestore allocator = hybrid
         bluestore block wal create = true"
         fi
@@ -905,7 +906,14 @@ EOF
                 mkdir -p $CEPH_DEV_DIR/osd$osd
                 if [ -n "${bluestore_dev[$osd]}" ]; then
                     dd if=/dev/zero of=${bluestore_dev[$osd]} bs=1M count=1
+                    # mkdir and mount nvme device on osd directory  
+                    sudo mkfs.ext4 -F /dev/nvme`expr $osd + 4`n1
+                    sudo mount /dev/nvme`expr $osd + 4`n1 $CEPH_DEV_DIR/osd$osd
                     ln -s ${bluestore_dev[$osd]} $CEPH_DEV_DIR/osd$osd/block
+                    # mkdir and mount nvme device on db directory  
+                    # mkdir -p $CEPH_DEV_DIR/osd$osd/db
+                    # sudo mkfs.ext4 -F /dev/nvme`expr $osd + 4`n1
+                    # sudo mount /dev/nvme`expr $osd + 4`n1 $CEPH_DEV_DIR/osd$osd/db
                     wconf <<EOF
         bluestore fsck on mount = false
 EOF
@@ -1349,7 +1357,8 @@ debug_journal = 20
 debug_filestore = 20
 debug_bluestore = 20
 debug_bluefs = 20
-debug_rocksdb = 20
+debug_rocksdb = 1
+debug_wiredtiger = 1
 debug_bdev = 20
 debug_reserver = 10
 debug_objclass = 20
